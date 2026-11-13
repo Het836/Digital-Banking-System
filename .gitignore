@@ -1,0 +1,10 @@
+# IDE-generated project files
+.idea/
+*.iml
+
+# Generated service documentation
+**/HELP.md
+
+# Local service configuration
+**/src/main/resources/application.yml
+**/src/main/resources/application.yaml
