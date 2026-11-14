@@ -38,6 +38,113 @@ public class NotificationService {
         }
     }
 
+    /**
+     * Transaction completed — debit sender, credit receiver.
+     */
+    @KafkaListener(topics = "transaction.completed")
+    private void consumeTransactionCompleted(Map<String, Object> payload) {
+        try {
+            String senderAccount = (String) payload.get("senderAccountNumber");
+            String receiverAccount = (String) payload.get("receiverAccountNumber");
+            String amount = payload.get("amount").toString();
+
+            sendAlert(senderAccount, "DEBIT ALERT",
+                    String.format("₹%s debited from account %s",
+                            amount, senderAccount));
+
+            sendAlert(receiverAccount, "CREDIT ALERT",
+                    String.format("₹%s credited to account %s",
+                            amount, receiverAccount));
+
+        } catch (Exception e) {
+            log.info("Error sending transaction completion notification: {}",
+                    e.getMessage());
+        }
+    }
+
+    @KafkaListener(topics = "fraud.detected")
+    private void consumeFraudDetected(Map<String, Object> payload) {
+        try {
+            String accountNumber = (String) payload.get("accountNumber");
+            String reason = (String) payload.get("reason");
+
+            sendAlert(accountNumber,
+                    "🚨 ACCOUNT BLOCKED",
+                    String.format(
+                            "Your account %s has been blocked. " +
+                                    "Reason: %s. " +
+                                    "Please contact your bank immediately.",
+                            accountNumber, reason));
+
+        } catch (Exception e) {
+            log.info("Error sending fraud detection notification: {}",
+                    e.getMessage());
+        }
+    }
+
+    @KafkaListener(topics = "transaction.refunded")
+    private void consumeTransactionRefunded(Map<String, Object> payload) {
+        try {
+            String senderAccount = (String) payload.get("senderAccountNumber");
+            String amount = payload.get("amount").toString();
+            String reason = (String) payload.get("reason");
+
+
+            sendAlert(senderAccount, "💰 REFUND PROCESSED",
+                    String.format(
+                            "Your transaction of ₹%s was cancelled. " +
+                                    "Reason: %s. " +
+                                    "₹%s has been refunded to account %s.",
+                            amount, reason, amount, senderAccount));
+
+        } catch (Exception e) {
+            log.info("Error sending transaction refund notification: {}",
+                    e.getMessage());
+        }
+    }
+
+    /**
+     * Payment completed via Razorpay.
+     */
+    @KafkaListener(topics = "payment.completed")
+    private void consumePaymentCompleted(Map<String, Object> payload) {
+        try {
+            String accountNumber = (String) payload.get("accountNumber");
+            String amount = payload.get("amount").toString();
+
+            sendAlert(accountNumber, "PAYMENT SUCCESSFUL",
+                    String.format(
+                            "Payment of ₹%s completed. " +
+                                    "Razorpay ID: %s",
+                            amount, payload.get("razorpayPaymentId")));
+
+        } catch (Exception e) {
+            log.info("Error sending payment completion notification: {}",
+                    e.getMessage());
+        }
+    }
+
+    /**
+     * Payment failed via Razorpay.
+     */
+    @KafkaListener(topics = "payment.failed")
+    private void consumePaymentFailed(Map<String, Object> payload) {
+        try {
+            String accountNumber = (String) payload.get("accountNumber");
+            String amount = payload.get("amount").toString();
+
+            sendAlert(accountNumber, "❌ PAYMENT FAILED",
+                    String.format(
+                            "Your payment of ₹%s could not be processed. " +
+                                    "Please try again or contact support.",
+                            amount));
+
+        } catch (Exception e) {
+            log.info("Error sending payment failure notification: {}",
+                    e.getMessage());
+        }
+    }
+
     private void sendAlert(String accountNumber,
                            String subject,
                            String message){
