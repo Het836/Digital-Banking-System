@@ -19,7 +19,7 @@ import java.security.SecureRandom;
 public class AccountService {
 
     private final AccountRepository repository;
-    private static SecureRandom secureRandom;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     // Create account
     public AccountResponse createAccount(CreateAccountRequest request){
@@ -115,7 +115,7 @@ public class AccountService {
         String accountNumber;
 
         do {
-            long number = secureRandom.nextLong(1_000_000_000l);
+            long number = SECURE_RANDOM.nextLong(1_000_000_000L);
 
             accountNumber = String.format("%012d", number);
         } while (repository.existsByAccountNumber(accountNumber));

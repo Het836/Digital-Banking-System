@@ -24,13 +24,13 @@ public class FraudDetectionService {
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final RedisTemplate<String, String> redisTemplate;
 
-    @Value("${fraud:max-transactions-per-minute}")
+    @Value("${fraud.max-transactions-per-minute}")
     private int maxTransactionsPerMinute;
 
-    @Value("${fraud:suspicious-amount-multiplier}")
+    @Value("${fraud.suspicious-amount-multiplier}")
     private double suspiciousAmountMultiplier;
 
-    @Value("${fraud:max-balance-percentage}")
+    @Value("${fraud.max-balance-percentage}")
     private double maxBalancePercentage;
 
     private static final String VERIFICATION_REQUIRED_TOPIC = "verification.required";
@@ -38,7 +38,7 @@ public class FraudDetectionService {
 
     public void checkTransaction(Map<String, Object> payload) {
         String transactionId = (String) payload.get("transactionId");
-        String accountNumber = (String) payload.get("accountNumber");
+        String accountNumber = (String) payload.get("senderAccountNumber");
         BigDecimal amount = new BigDecimal(payload.get("amount").toString());
 
         // Fetch real balance from Account service
@@ -117,7 +117,7 @@ public class FraudDetectionService {
         Long count = redisTemplate.opsForValue().increment(key);
 
         if(count!=null && count==1){
-            redisTemplate.expire(key, 60, TimeUnit.MINUTES);
+            redisTemplate.expire(key, 60, TimeUnit.SECONDS);
         }
 
         log.info("Velocity check - account: {} count: {}/{}",

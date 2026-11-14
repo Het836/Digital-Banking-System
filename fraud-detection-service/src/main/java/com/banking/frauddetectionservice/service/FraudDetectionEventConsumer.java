@@ -2,6 +2,7 @@ package com.banking.frauddetectionservice.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 
@@ -18,14 +19,15 @@ public class FraudDetectionEventConsumer {
      * Listens to transaction.initiated topic.
      * Every transaction goes through fraud check be fore completing.
      */
+    @KafkaListener(topics = "transaction.initiated")
     public void consumeTransactionInitiated(
-            @Payload Map<String, Object> paylod
+            @Payload Map<String, Object> payload
     ){
-        log.info("Received transaction initiated event for fraud check: {}", paylod.get("transactionId"));
+        log.info("Received transaction initiated event for fraud check: {}", payload.get("transactionId"));
         try{
-            fraudDetectionService.checkTransaction(paylod);
+            fraudDetectionService.checkTransaction(payload);
         } catch (Exception e) {
-            log.error("Error occurred while checking transaction for fraud: {}", paylod.get("transactionId"), e);
+            log.error("Error occurred while checking transaction for fraud: {}", payload.get("transactionId"), e);
         }
     }
 }

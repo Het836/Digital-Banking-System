@@ -8,3 +8,4 @@
 # Local service configuration
 **/src/main/resources/application.yml
 **/src/main/resources/application.yaml
+rzp-key.csv

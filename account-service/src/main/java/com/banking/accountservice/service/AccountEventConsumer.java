@@ -25,7 +25,7 @@ public class AccountEventConsumer {
             @Payload Map<String, Object> payload
             ){
         try {
-            String receiverAccount = payload.get("receiverAccount").toString();
+            String receiverAccount = payload.get("receiverAccountNumber").toString();
             BigDecimal amount = new BigDecimal(payload.get("amount").toString());
 
             log.info("Crediting account {} with amount {}", receiverAccount, amount);
@@ -44,7 +44,7 @@ public class AccountEventConsumer {
             @Payload Map<String, Object> payload
     ) {
         try {
-            String flaggedAccount = payload.get("flaggedAccount").toString();
+            String flaggedAccount = payload.get("accountNumber").toString();
 
             log.info("Fraud detected - blocking account: {}", flaggedAccount);
             accountService.blockAccount(flaggedAccount);

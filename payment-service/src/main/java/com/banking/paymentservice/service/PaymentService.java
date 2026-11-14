@@ -31,10 +31,10 @@ public class PaymentService {
     private static final String PAYMENT_COMPLETED_TOPIC = "payment.completed";
     private static final String PAYMENT_FAILED_TOPIC = "payment.failed";
 
-    @Value("${razorpay.key.id}")
+    @Value("${razorpay.key-id}")
     private String keyId;
 
-    @Value("${razorpay.key.secret}")
+    @Value("${razorpay.key-secret}")
     private String keySecret;
 
     /**
@@ -62,7 +62,7 @@ public class PaymentService {
 
         JSONObject orderRequest = new JSONObject();
         orderRequest.put("amount", amountPaise);
-        orderRequest.put("currency", "USD/INR");
+        orderRequest.put("currency", "USD");
         orderRequest.put("receipt", "recp_"+ System.currentTimeMillis() + UUID.randomUUID().toString()
                 .replace("-", "").substring(0,10));
 
@@ -74,7 +74,7 @@ public class PaymentService {
                 .razorpayPaymentId(razorpayOrder.get("id").toString())
                 .accountNumber(request.getAccountNumber())
                 .amount(request.getAmount())
-                .currency("USD/INR")
+                .currency("USD")
                 .status(PaymentStatus.CREATED)
                 .description(request.getDescription())
                 .build();
@@ -85,7 +85,7 @@ public class PaymentService {
                 .paymentId(saved.getId())
                 .razorpayOrderId(razorpayOrder.get("id").toString())
                 .amount(request.getAmount())
-                .currency("USD/INR")
+                .currency("USD")
                 .razorpayKeyId(keyId)
                 .status("CREATED")
                 .build();
