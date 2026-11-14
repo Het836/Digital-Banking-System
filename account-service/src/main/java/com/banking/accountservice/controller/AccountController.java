@@ -61,7 +61,7 @@ public class AccountController {
     @PutMapping("/{accountNumber}/deduct")
     public ResponseEntity<String> deductBalance(
             @PathVariable String accountNumber,
-            @RequestBody BigDecimal amount
+            @RequestParam BigDecimal amount
             ) {
         service.deductBalance(accountNumber, amount);
         return ResponseEntity.ok("Balance deducted successfully");
@@ -76,7 +76,7 @@ public class AccountController {
     @PutMapping("/{accountNumber}/credit")
     public ResponseEntity<String> creditBalance(
             @PathVariable String accountNumber,
-            @RequestBody BigDecimal amount
+            @RequestParam BigDecimal amount
             ) {
         service.creditBalance(accountNumber, amount);
         return ResponseEntity.ok("Balance credited successfully");
