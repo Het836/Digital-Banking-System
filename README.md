@@ -8,7 +8,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.2-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-### [Open the live application](http://13.239.36.115:8080)
+### [Open the live application(Sample link to view one accounts)](http://13.239.36.115:8080/api/v1/accounts/000602323788)
 
 **Gateway:** `http://13.239.36.115:8080` &nbsp;|&nbsp; **Health:** [`/actuator/health`](http://13.239.36.115:8080/actuator/health)
 
