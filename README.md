@@ -8,13 +8,9 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.2-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-### [Open the live application(Sample link to view one accounts)](http://13.239.36.115:8080/api/v1/accounts/000602323788)
-
-**Gateway:** `http://13.239.36.115:8080` &nbsp;|&nbsp; **Health:** [`/actuator/health`](http://13.239.36.115:8080/actuator/health)
-
 </div>
 
-> **Deployment:** AWS ECR and EC2, as reported by the project owner. The URL above is the public gateway address. No frontend or API documentation UI is included in this repository.
+> **Deployment status:** AWS EC2 deployment configuration has been set up (NCR). There is currently no public live URL. The application can be run locally with Docker Compose.
 
 ## Contents
 
@@ -22,7 +18,7 @@
 - [Architecture & request flow](#architecture--request-flow)
 - [Services & project structure](#services--project-structure)
 - [Technology](#technology)
-- [Run locally](#run-locally)
+- [Run locally with Docker](#run-locally-with-docker)
 - [Configuration](#configuration)
 - [API reference](#api-reference)
 - [Data & messaging](#data--messaging)
@@ -36,7 +32,7 @@
 | | |
 |---|---|
 | **Purpose** | Account management, internal transfers, fraud checks, and Razorpay order creation |
-| **Public gateway** | [`http://13.239.36.115:8080`](http://13.239.36.115:8080) |
+| **Local gateway** | `http://localhost:8080` |
 | **API base path** | `/api/v1` |
 | **Services** | API Gateway, Account, Transaction, Payment, Fraud Detection, Notification |
 | **Local infrastructure** | MySQL, Kafka/Zookeeper, Redis via Docker Compose |
@@ -96,7 +92,8 @@ The flow is asynchronous after transfer initiation and uses compensating actions
 | `payment-service/` | Razorpay order creation and payment records | 8083 |
 | `fraud-detection-service/` | Kafka-driven transaction checks | 8084 |
 | `notification-service/` | Kafka consumers that log notifications | 8085 |
-| `docker-compose.yml` | Local MySQL, Redis, Kafka, and Zookeeper | — |
+| `docker-compose.yml` | Local infrastructure and all six application services | — |
+| `frontend/` | Local frontend work; currently excluded from GitHub by `.gitignore` | 3000 |
 
 Each service is an independent Maven project with `src/main/java`, `src/main/resources`, and `src/test/java`. Packages contain the service's controllers, services, repositories, entities, DTOs, clients, events, or configuration as needed.
 
@@ -112,43 +109,45 @@ Each service is an independent Maven project with `src/main/java`, `src/main/res
 | Build/test | Maven Wrapper, JUnit / Spring Boot test dependencies |
 | Local infrastructure | Docker Compose |
 
-## Run locally
+## Run locally with Docker
 
 ### Prerequisites
 
-- JDK 17
 - Docker Engine and Docker Compose
-- Internet access for the first Maven Wrapper dependency download
-- Razorpay test credentials if running Payment Service against Razorpay
 
-### Start infrastructure
-
-From the repository root:
+From the repository root, build the six microservice images locally and start the full backend:
 
 ```bash
-docker compose up -d
+docker compose up --build -d
+docker compose ps
 ```
 
-Compose exposes MySQL on host port `3307`, Redis on `6379`, and Kafka on `9092`. It starts infrastructure only, not the Java services.
+Compose builds the six application images from their service source and Dockerfiles; it does not pull those application images from AWS ECR. Docker downloads the infrastructure images (MySQL, Redis, Kafka, and Zookeeper) from their registries if they are not already present locally.
 
-### Start services
+The API Gateway is available at `http://localhost:8080`. Service ports are `8081`–`8085`; MySQL is exposed on `localhost:3307`, Redis on `localhost:6379`, and Kafka on `localhost:9092`. Within the Compose network, applications connect to infrastructure using service hostnames such as `mysql`, `redis`, and `kafka`.
 
-Start each service in its own terminal:
+After changing service code, rebuild and restart the services:
 
-| Service | From repository root (Linux/macOS) |
-|---|---|
-| Account | `cd account-service && ./mvnw spring-boot:run` |
-| Transaction | `cd transaction-service && ./mvnw spring-boot:run` |
-| Fraud Detection | `cd fraud-detection-service && ./mvnw spring-boot:run` |
-| Notification | `cd notification-service && ./mvnw spring-boot:run` |
-| API Gateway | `cd api-gateway && ./mvnw spring-boot:run` |
-| Payment | `cd payment-service && ./mvnw spring-boot:run` |
+```bash
+docker compose up --build -d
+```
 
-On Windows, use `cd <service-folder>` followed by `.\mvnw.cmd spring-boot:run`. Configure valid Razorpay credentials before starting Payment Service; see [Configuration](#configuration) and [Troubleshooting & limitations](#troubleshooting--limitations). Stop local infrastructure with `docker compose down`.
+View logs and stop the stack with:
+
+```bash
+docker compose logs -f api-gateway
+docker compose down
+```
+
+`docker compose down` preserves the MySQL data volume. To remove the data volume as well, use `docker compose down -v`.
+
+> **Fresh-clone configuration note:** Service `application.yaml` files are currently excluded by `.gitignore` and may exist only in the local working copy. They are required in each service's `src/main/resources` directory when building its image. A fresh clone needs these local configuration files before `docker compose up --build -d` can start the services. Do not commit credentials; use environment variables or sanitized configuration values.
+
+The `frontend/` directory is local-only and is not included in this repository at this time. To run it locally, use `npm install` and `npm run dev` from that directory; it is configured to connect to the gateway at `http://localhost:8080`.
 
 ## Configuration
 
-Each module has `src/main/resources/application.yaml` and an `example.application.yaml`. Spring Boot properties may be overridden with environment variables or command-line options. The repository has no root `.env` loader.
+Spring Boot properties can be overridden with environment variables or command-line options. Docker Compose reads a root `.env` file when present; keep it local and never commit credentials.
 
 | Configuration | Defaults / notes |
 |---|---|
@@ -158,13 +157,13 @@ Each module has `src/main/resources/application.yaml` and an `example.applicatio
 | Account service URL | `ACCOUNT_SERVICE_URL`, default `http://localhost:8081` |
 | Gateway backend URLs | `TRANSACTION_SERVICE_URL` defaults to `http://localhost:8082`; `PAYMENT_SERVICE_URL` defaults to `http://localhost:8083` |
 | Fraud thresholds | `fraud.max-transactions-per-minute: 5`; `fraud.suspicious-amount-multiplier: 5`; `fraud.max-balance-percentage: 0.90` |
-| Razorpay | `razorpay.key-id`, `razorpay.key-secret`, `razorpay.webhook-secret`; provide credentials using a secure environment-specific configuration |
+| Razorpay | Set `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` for payment requests; keep credentials in local environment configuration |
 
 For local MySQL overrides, standard Spring properties include `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`. Razorpay key properties can be overridden with `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`. Never commit real credentials.
 
 ## API reference
 
-The Gateway routes the API paths below. The base URL is `http://13.239.36.115:8080` when using the public deployment, or `http://localhost:8080` locally. Requests/responses use JSON unless indicated.
+The Gateway routes the API paths below. Use `http://localhost:8080` as the base URL for local requests. Requests/responses use JSON unless indicated.
 
 | Method | Path | Purpose and input |
 |---|---|---|
@@ -188,7 +187,7 @@ curl -X POST http://localhost:8080/api/v1/accounts \
   -d '{"accountHolderName":"Alex Example","email":"alex@example.test","phone":"5550100","accountType":"SAVING","initialDeposit":1000.00}'
 ```
 
-The response includes the generated `accountNumber`, account status, balance, and daily transaction limit. Replace `localhost:8080` with the [public gateway](http://13.239.36.115:8080) to target the deployment. Avoid sending test or personal data to a public deployment unless authorized.
+The response includes the generated `accountNumber`, account status, balance, and daily transaction limit.
 
 ### Example: initiate a transfer
 
@@ -225,6 +224,10 @@ Actuator health and info endpoints are configured across services; the Gateway a
 ```bash
 curl http://localhost:8080/actuator/health
 curl http://localhost:8081/actuator/health
+curl http://localhost:8082/actuator/health
+curl http://localhost:8083/actuator/health
+curl http://localhost:8084/actuator/health
+curl http://localhost:8085/actuator/health
 ```
 
 Run a module's tests from its directory:
@@ -243,14 +246,13 @@ On Windows use `.\mvnw.cmd test`. The modules include Spring application context
 | Database authentication/connection error | Compare the service JDBC configuration with the local MySQL setup. The Compose MySQL volume persists across restarts. |
 | Gateway returns `503` | Verify target services and Redis. Gateway rate limits are 10 requests/second (burst 20) for account/transaction routes and 5/second (burst 10) for payment routes, by remote IP. |
 | Transfer stays `PROCESSING` | Check Kafka consumer logs and query the transaction again. Suspicious transactions require OTP verification. |
-| Payment startup or provider calls fail | Supply valid Razorpay test credentials and review the configuration caveats below. |
+| Payment provider calls fail | Supply valid Razorpay test credentials through local environment variables. |
 
 **Implementation caveats**
 
 - Local Compose is a development setup: single-node Kafka and MySQL root access; it is not production-hardened.
 - The Gateway has no authentication configured. Do not expose account/balance operations to untrusted users.
 - Notification consumers write message content to application logs. Email delivery is not implemented despite mail dependencies.
-- Payment configuration currently nests JPA and Kafka properties under `spring.datasource` instead of as sibling `spring.jpa` and `spring.kafka` properties. The payment broker address also differs from the Compose advertised addresses; verify/correct both before running that service locally.
 - Payment webhook handler has no HTTP route annotation, and the configured webhook secret is not validated.
 - Payment creation requests `USD` but converts the amount to minor units by multiplying by 100. Verify currency/amount handling before real use.
 - Daily transaction limits are stored but are not enforced by transfer logic.

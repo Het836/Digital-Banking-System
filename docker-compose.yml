@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
 
 
@@ -15,7 +13,7 @@ services:
     image: mysql:8.0
     container_name: mysql-dbs
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
     ports:
       - "3307:3306"
     volumes:
@@ -54,7 +52,10 @@ services:
   # ---------- APP SERVICES ----------
 
   account-service:
-    image: 307848654827.dkr.ecr.ap-southeast-2.amazonaws.com/account-service:latest
+    image: digital-banking/account-service:local
+    build:
+      context: ./account-service
+      dockerfile: Dockerfile
     container_name: account-service
     ports:
       - "8081:8081"
@@ -71,7 +72,10 @@ services:
       - banking-network
 
   transaction-service:
-    image: 307848654827.dkr.ecr.ap-southeast-2.amazonaws.com/transaction-service:latest
+    image: digital-banking/transaction-service:local
+    build:
+      context: ./transaction-service
+      dockerfile: Dockerfile
     container_name: transaction-service
     ports:
       - "8082:8082"
@@ -92,7 +96,10 @@ services:
       - banking-network
 
   payment-service:
-    image: 307848654827.dkr.ecr.ap-southeast-2.amazonaws.com/payment-service:latest
+    image: digital-banking/payment-service:local
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
     container_name: payment-service
     ports:
       - "8083:8083"
@@ -101,8 +108,8 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
-      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
     depends_on:
       - mysql
       - kafka
@@ -111,7 +118,10 @@ services:
       - banking-network
 
   fraud-detection-service:
-    image: 307848654827.dkr.ecr.ap-southeast-2.amazonaws.com/fraud-detection-service:latest
+    image: digital-banking/fraud-detection-service:local
+    build:
+      context: ./fraud-detection-service
+      dockerfile: Dockerfile
     container_name: fraud-detection-service
     ports:
       - "8084:8084"
@@ -128,7 +138,10 @@ services:
       - banking-network
 
   notification-service:
-    image: 307848654827.dkr.ecr.ap-southeast-2.amazonaws.com/notification-service:latest
+    image: digital-banking/notification-service:local
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
     container_name: notification-service
     ports:
       - "8085:8085"
@@ -141,7 +154,10 @@ services:
       - banking-network
 
   api-gateway:
-    image: 307848654827.dkr.ecr.ap-southeast-2.amazonaws.com/api-gateway:latest
+    image: digital-banking/api-gateway:local
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
     container_name: api-gateway
     ports:
       - "8080:8080"

@@ -9,6 +9,11 @@
 **/src/main/resources/application.yml
 **/src/main/resources
 /application.yaml
+
+# Local-only frontend; not published with the backend repository yet
+/frontend/
+
+# Local environment variables and credentials
 rzp-key.csv
 .env
 aws-key.csv
