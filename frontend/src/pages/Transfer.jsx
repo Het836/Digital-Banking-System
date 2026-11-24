@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDownLeft, ArrowLeftRight, ArrowRight, BadgeCheck, AlertCircle, Clock3, Loader2, LockKeyhole, RefreshCw, Send, ShieldCheck } from 'lucide-react';
 import { getErrorMessage, getTransaction, transfer, verifyTransaction } from '../services/api';
@@ -19,6 +19,30 @@ export default function Transfer({ account }) {
   const [message, setMessage] = useState('');
 
   const updateForm = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+
+  useEffect(() => {
+    if (!transaction?.id || transaction.status !== 'PROCESSING') return undefined;
+
+    let active = true;
+    let timeoutId;
+    const pollStatus = async () => {
+      try {
+        const response = await getTransaction(transaction.id);
+        if (!active) return;
+        setTransaction(response.data);
+      } catch (requestError) {
+        if (active) setError(getErrorMessage(requestError, 'Could not refresh the transfer status.'));
+      } finally {
+        if (active) timeoutId = window.setTimeout(pollStatus, 2500);
+      }
+    };
+
+    timeoutId = window.setTimeout(pollStatus, 1500);
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [transaction?.id, transaction?.status]);
 
   const sendTransfer = async (event) => {
     event.preventDefault();
@@ -66,7 +90,9 @@ export default function Transfer({ account }) {
       const response = await verifyTransaction(transaction.id, otp.trim());
       setTransaction(response.data);
       setOtp('');
-      setMessage('Verification submitted. The transaction status has been updated.');
+      setMessage(response.data.status === 'COMPLETED'
+        ? 'OTP verified. The transfer is complete.'
+        : 'The code was invalid or expired. The transfer was cancelled and the amount refunded.');
     } catch (requestError) {
       setError(getErrorMessage(requestError, 'The verification code was not accepted.'));
     } finally {
@@ -161,12 +187,18 @@ export default function Transfer({ account }) {
             <span className={`status-label ${String(transaction.status || '').toLowerCase()}`}>{transaction.status || 'PROCESSING'}</span>
           </div>
           {transaction.status === 'PROCESSING' && (
+            <div className="otp-area otp-pending" role="status">
+              <div className="otp-explainer"><RefreshCw className="spin" size={16} /><span>Fraud checks are still running. This page checks the transfer status automatically.</span></div>
+            </div>
+          )}
+          {transaction.status === 'PENDING_VERIFICATION' && (
             <div className="otp-area">
-              <div className="otp-explainer"><ShieldCheck size={17} /><span>If this transfer needs verification, enter the six-digit OTP sent by the Notification Service. In this local demo, check <code>docker compose logs notification-service</code>.</span></div>
+              <div className="otp-explainer"><ShieldCheck size={17} /><span>This transfer needs an additional security check. A six-digit code is being sent to {account.email || 'your registered email'} and expires in 5 minutes. Check the local inbox in <a href="http://localhost:8025" target="_blank" rel="noreferrer">Mailpit</a>.</span></div>
               <form className="otp-form" onSubmit={submitOtp}>
-                <input className="text-input otp-input" aria-label="One-time password" inputMode="numeric" autoComplete="one-time-code" maxLength="6" pattern="[0-9]{6}" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="••••••" />
+                <input className="text-input otp-input" aria-label="One-time password" inputMode="numeric" autoComplete="one-time-code" maxLength="6" pattern="[0-9]{6}" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="••••••" required />
                 <button type="submit" className="button button-primary" disabled={loading || otp.length !== 6}>{loading ? 'Verifying…' : 'Verify transfer'} <ArrowRight size={16} /></button>
               </form>
+              <p className="otp-warning">An incorrect or expired code cancels the transfer and refunds the amount. An incorrect code may also block the sender account.</p>
             </div>
           )}
         </section>

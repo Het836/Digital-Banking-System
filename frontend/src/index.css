@@ -337,8 +337,10 @@ button { color: inherit; }
 .otp-explainer { display: flex; align-items: flex-start; gap: 8px; color: #9b9e8c; font-size: 9px; line-height: 1.65; }
 .otp-explainer svg { flex: 0 0 auto; margin-top: 1px; color: var(--amber); }
 .otp-explainer code { color: #d8c995; }
+.otp-explainer a { color: #c5f58a; text-decoration: underline; text-underline-offset: 2px; }
 .otp-form { display: flex; gap: 8px; margin-top: 12px; }
 .otp-input { max-width: 180px; font-size: 15px; letter-spacing: 5px; text-align: center; }
+.otp-warning { margin: 10px 0 0; color: #bd9d70; font-size: 8px; line-height: 1.5; }
 .large-empty { min-height: 260px; justify-content: center; }
 
 .payment-account { display: flex; align-items: center; gap: 10px; margin: 19px 0 21px; padding: 11px; border: 1px solid #292f3b; border-radius: 9px; background: #0d1119; }

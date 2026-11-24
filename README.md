@@ -79,7 +79,7 @@ flowchart LR
 3. Fraud Detection checks the transaction and publishes either `fraud.check.clean` or `verification.required`.
 4. A clean transaction is marked `COMPLETED`; `transaction.completed` causes Account Service to credit the receiver.
 5. A suspicious transaction requires OTP verification. The OTP is stored in Redis for five minutes. A valid OTP completes the transfer; an expired or incorrect OTP causes a sender refund. An incorrect OTP also triggers an account block event.
-6. Notification Service consumes events and writes notification content to application logs.
+6. Notification Service captures the verification code in the local Mailpit inbox. On a clean transfer, it logs the debit/credit notification events.
 
 The flow is asynchronous after transfer initiation and uses compensating actions rather than a distributed database transaction. A newly created transfer can initially return with status `PROCESSING`.
 
@@ -93,7 +93,7 @@ The flow is asynchronous after transfer initiation and uses compensating actions
 | `payment-service/` | Razorpay order creation and payment records | 8083 |
 | `fraud-detection-service/` | Kafka-driven transaction checks | 8084 |
 | `notification-service/` | Kafka consumers that log notifications | 8085 |
-| `docker-compose.yml` | Local infrastructure and all six application services | — |
+| `docker-compose.yml` | Local infrastructure, Mailpit, and all six application services | — |
 | `frontend/` | React/Vite dashboard for local development and service demonstration | 3000 |
 
 Each service is an independent Maven project with `src/main/java`, `src/main/resources`, and `src/test/java`. Packages contain the service's controllers, services, repositories, entities, DTOs, clients, events, or configuration as needed.
@@ -125,9 +125,9 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Compose builds the six application images from their service source and Dockerfiles; it does not pull those application images from AWS ECR. Docker downloads the infrastructure images (MySQL, Redis, Kafka, and Zookeeper) from their registries if they are not already present locally.
+Compose builds the six application images from their service source and Dockerfiles; it does not pull those application images from AWS ECR. Docker downloads the infrastructure images (MySQL, Redis, Kafka, Zookeeper, and Mailpit) from their registries if they are not already present locally.
 
-The API Gateway is available at `http://localhost:8080`. Service ports are `8081`–`8085`; MySQL is exposed on `localhost:3307`, Redis on `localhost:6379`, and Kafka on `localhost:9092`. Within the Compose network, applications connect to infrastructure using service hostnames such as `mysql`, `redis`, and `kafka`.
+The API Gateway is available at `http://localhost:8080`. Service ports are `8081`–`8085`; MySQL is exposed on `localhost:3307`, Redis on `localhost:6379`, Kafka on `localhost:9092`, and Mailpit's inbox UI on `http://localhost:8025` (SMTP on `localhost:1025`). Within the Compose network, applications connect to infrastructure using service hostnames such as `mysql`, `redis`, `kafka`, and `mailpit`.
 
 After changing service code, rebuild and restart the services:
 
@@ -155,6 +155,7 @@ Spring Boot properties can be overridden with environment variables or command-l
 | Ports | Gateway `8080`; services `8081`–`8085` as listed above |
 | MySQL | Local host port `3307`; separate databases `dbs_account_db`, `dbs_transaction_db`, `dbs_payment_db` |
 | Redis | Containers use `redis:6379`; host tools can use `localhost:6379` |
+| Mailpit | SMTP `mailpit:1025` from containers; inbox UI `http://localhost:8025` |
 | Account service URL | `ACCOUNT_SERVICE_URL`, default `http://account-service:8081` inside Compose |
 | Gateway backend URLs | `TRANSACTION_SERVICE_URL` defaults to `http://transaction-service:8082`; `PAYMENT_SERVICE_URL` defaults to `http://payment-service:8083` inside Compose |
 | Fraud thresholds | `fraud.max-transactions-per-minute: 5`; `fraud.suspicious-amount-multiplier: 5`; `fraud.max-balance-percentage: 0.90` |
@@ -180,6 +181,8 @@ The Gateway routes the API paths below. Use `http://localhost:8080` as the base 
 | `POST` | `/api/v1/transactions/{transactionId}/verify?otp={otp}` | Verify a pending transaction with its six-digit OTP. |
 | `POST` | `/api/v1/payments/create-order` | Create a Razorpay order. JSON: `accountNumber`, positive `amount`, optional `description`. |
 | `POST` | `/api/v1/payments/verify` | Verify a Razorpay checkout signature. JSON: `razorpayOrderId`, `razorpayPaymentId`, `razorpaySignature`. |
+
+When Fraud Detection flags a transfer, Transaction Service generates a six-digit OTP valid for five minutes and marks the transaction `PENDING_VERIFICATION`. Notification Service looks up the sender's registered account email and sends the code to Mailpit; open `http://localhost:8025` to retrieve it, then enter it on the Transfer page. Mailpit captures mail locally and does not deliver messages to real inboxes. A wrong or expired OTP cancels/refunds the transfer; the current implementation also blocks the sender after an incorrect code.
 
 ### Example: create an account
 
@@ -264,18 +267,19 @@ On Windows use `.\mvnw.cmd test`. The modules include Spring application context
 | Database authentication/connection error | Compare the service JDBC configuration with the local MySQL setup. The Compose MySQL volume persists across restarts. |
 | Gateway returns `503` | Verify target services and Redis. |
 | Gateway returns `429` | The Gateway applies IP-based Redis rate limits. Local Compose overrides are 100 requests/second (burst 200) for account/transaction routes and 50/second (burst 100) for payments; application defaults remain lower. |
-| Transfer stays `PROCESSING` | Check Kafka consumer logs and query the transaction again. Suspicious transactions require OTP verification. |
+| Transfer stays `PROCESSING` | Check Kafka and service logs. Fraud checks run asynchronously; a flagged transfer becomes `PENDING_VERIFICATION`. |
+| OTP email is missing | Confirm the account has a valid email address, `mailpit` and `notification-service` are running, then inspect `docker compose logs notification-service transaction-service`. Check the Mailpit inbox at `http://localhost:8025`. |
 | Payment provider calls fail | Supply valid Razorpay test credentials through local environment variables. |
 
 **Implementation caveats**
 
 - Local Compose is a development setup: single-node Kafka and MySQL root access; it is not production-hardened.
 - The Gateway has no authentication configured. Do not expose account/balance operations to untrusted users.
-- Notification consumers write message content to application logs. Email delivery is not implemented despite mail dependencies.
+- Local OTP email is handled by Java Mail and captured by Mailpit. Other notification events currently write message content to application logs rather than sending production email.
 - Payment checkout is confirmed through the `/verify` endpoint and server-side signature verification. A webhook handler exists in the code but is not mapped to an HTTP route; webhook signature validation is not implemented.
 - Payment orders use INR and convert rupees to paise; use Razorpay test credentials for local checkout.
 - Daily transaction limits are stored but are not enforced by transfer logic.
-- OTPs are included in application notification logs. Do not use real financial or personal data in development.
+- Local OTP email is captured by Mailpit and is not delivered to external inboxes. Do not use real financial or personal data in development.
 
 ## Future improvements
 

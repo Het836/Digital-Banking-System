@@ -11,6 +11,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +25,7 @@ public class TransactionEventConsumer{
     private final RedisTemplate<String, String> redisTemplate;
     private final TransactionService transactionService;
     private static final long OTP_EXPIRY_MINUTES = 5;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
@@ -36,51 +38,45 @@ public class TransactionEventConsumer{
     @KafkaListener(topics = "verification.required")
     public void consumeVerificationRequired(
             @Payload Map<String, Object> payload
-            ){
-        try{
-            String transactionId = (String) payload.get("transactionId");
-            String accountNumber = (String) payload.get("accountNumber");
-            String reason = (String) payload.get("reason");
+    ) {
+        String transactionId = (String) payload.get("transactionId");
+        String accountNumber = (String) payload.get("accountNumber");
+        String reason = (String) payload.get("reason");
 
-            log.info("Verification required - transaction: {} reason: {}",
-                    transactionId, reason);
+        log.info("Verification required - transaction: {} reason: {}",
+                transactionId, reason);
 
-            Transaction transaction = transactionRepository.findById(transactionId)
-                    .orElseThrow(() -> new RuntimeException(
-                            "Transaction not found" + transactionId
-                    ));
+        Transaction transaction = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Transaction not found: " + transactionId
+                ));
+        if (transaction.getStatus() != TranscationStatus.PROCESSING
+                && transaction.getStatus() != TranscationStatus.PENDING_VERIFICATION) {
+            log.warn("Transaction {} is {}, skipping OTP generation", transactionId, transaction.getStatus());
+            return;
+        }
 
-            if(transaction.getStatus()!= TranscationStatus.PROCESSING){
-                log.warn("Transaction {} not PROCESSING - skipping", transactionId);
-                return;
-            }
-
-            // Genrate 6 digit otp
-            String otp = String.format("%06d", (int) (Math.random() * 900000) + 100000);
-
-            // Store OTP in Redis - expire i 5 minutes
-            String otpKey = "verification:otp" + transactionId;
+        String otpKey = "verification:otp" + transactionId;
+        String otp = redisTemplate.opsForValue().get(otpKey);
+        if (transaction.getStatus() == TranscationStatus.PROCESSING || otp == null) {
+            otp = String.format("%06d", SECURE_RANDOM.nextInt(100_000, 1_000_000));
             redisTemplate.opsForValue().set(otpKey, otp, OTP_EXPIRY_MINUTES, TimeUnit.MINUTES);
-
-            // Update Status
+        }
+        if (transaction.getStatus() == TranscationStatus.PROCESSING) {
             transaction.setStatus(TranscationStatus.PENDING_VERIFICATION);
             transactionRepository.save(transaction);
-
-            log.info("OTP generated for transaction: {} expires in {} min",
-                    transactionId, OTP_EXPIRY_MINUTES);
-
-            // Notify user
-            Map<String, Object> otpEvent = new HashMap<>();
-            otpEvent.put("transactionId", transactionId);
-            otpEvent.put("accountNumber", accountNumber);
-            otpEvent.put("reason", reason);
-            otpEvent.put("otp", otp);
-            otpEvent.put("amount", payload.get("amount"));
-
-            kafkaTemplate.send(TRANSACTION_OTP_GENERATED_TOPIC, transactionId, otpEvent);
-        }catch (Exception e){
-            log.error("Error handling verification required: {}", e.getMessage());
         }
+
+        Map<String, Object> otpEvent = new HashMap<>();
+        otpEvent.put("transactionId", transactionId);
+        otpEvent.put("accountNumber", accountNumber);
+        otpEvent.put("reason", reason);
+        otpEvent.put("otp", otp);
+        otpEvent.put("amount", payload.get("amount"));
+
+        kafkaTemplate.send(TRANSACTION_OTP_GENERATED_TOPIC, transactionId, otpEvent).join();
+        log.info("OTP notification queued for transaction {} with {} minute expiry",
+                transactionId, OTP_EXPIRY_MINUTES);
     }
 
     @KafkaListener(topics = "fraud.check.clean")

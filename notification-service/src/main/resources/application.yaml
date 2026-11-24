@@ -1,6 +1,15 @@
 spring:
   application:
     name: notification-service
+  mail:
+    host: ${SPRING_MAIL_HOST:mailpit}
+    port: ${SPRING_MAIL_PORT:1025}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
   kafka:
     bootstrap-servers: kafka:29092
     consumer:
@@ -22,6 +31,14 @@ spring:
 
 server:
   port: 8085
+
+account:
+  service:
+    url: ${ACCOUNT_SERVICE_URL:http://account-service:8081}
+
+notification:
+  mail:
+    from: ${NOTIFICATION_MAIL_FROM:no-reply@digitalbank.local}
 
 management:
   endpoints:

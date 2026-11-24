@@ -2,8 +2,12 @@ package com.banking.notificationservice.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
 
 import java.util.Map;
 
@@ -12,30 +16,50 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class NotificationService {
 
+    private final JavaMailSender mailSender;
+    private final RestClient restClient = RestClient.create();
+
+    @Value("${account.service.url:http://account-service:8081}")
+    private String accountServiceUrl;
+
+    @Value("${notification.mail.from:no-reply@digitalbank.local}")
+    private String fromAddress;
+
     @KafkaListener(topics = "transaction.otp.generated")
     public void consumeOtpGenerated(Map<String, Object> payload) {
-        try {
-            String accountNumber = (String) payload.get("accountNumber");
-            String otp = (String) payload.get("otp");
-            String transactionId = (String) payload.get("transactionId");
-            String amount = payload.get("amount").toString();
-            String reason = (String) payload.get("reason");
+        String accountNumber = (String) payload.get("accountNumber");
+        String otp = (String) payload.get("otp");
+        String transactionId = (String) payload.get("transactionId");
+        String amount = String.valueOf(payload.get("amount"));
+        Object reasonValue = payload.get("reason");
+        String reason = reasonValue instanceof String value && !value.isBlank()
+                ? value
+                : "Unusual activity detected";
 
-            sendAlert(accountNumber,
-                    "🔐 TRANSACTION VERIFICATION REQUIRED",
-                    String.format(
-                            "Suspicious activity detected on your account. " +
-                                    "Reason: %s. " +
-                                    "A transaction of ₹%s is pending verification. " +
-                                    "Your OTP is: %s. Valid for 5 minutes. " +
-                                    "If this wasn't you — ignore this message. " +
-                                    "Transaction will be cancelled and amount refunded automatically.",
-                            reason, amount, otp, transactionId, otp));
+        AccountContact account = restClient
+                .get()
+                .uri(accountServiceUrl + "/api/v1/accounts/{accountNumber}", accountNumber)
+                .retrieve()
+                .body(AccountContact.class);
 
-        } catch (Exception e) {
-            log.info("Error sending OTP notification: {}",
-                    e.getMessage());
+        if (account == null || account.email() == null || account.email().isBlank()) {
+            throw new IllegalStateException("No email address is available for account " + accountNumber);
         }
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(fromAddress);
+        message.setTo(account.email());
+        message.setSubject("Transfer verification code");
+        message.setText(String.format(
+                "A transfer of INR %s was held for verification.%n%n" +
+                        "Reason: %s%n" +
+                        "Your one-time code is %s. It expires in 5 minutes.%n%n" +
+                        "If you did not initiate this transfer, do not share this code and contact your bank.%n" +
+                        "Reference: %s",
+                amount, reason, otp, transactionId
+        ));
+        mailSender.send(message);
+        log.info("OTP email delivered to the local mail server for transaction {}", transactionId);
     }
 
     /**
@@ -154,5 +178,8 @@ public class NotificationService {
         log.info("Subject : {}", subject);
         log.info("Message : {}", message);
         log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    }
+
+    private record AccountContact(String email) {
     }
 }

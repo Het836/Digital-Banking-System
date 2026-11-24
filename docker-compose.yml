@@ -9,6 +9,15 @@ services:
     networks:
       - banking-network
 
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit-dbs
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - banking-network
+
   mysql:
     image: mysql:8.0
     container_name: mysql-dbs
@@ -148,8 +157,13 @@ services:
       - "8085:8085"
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: 1025
+      ACCOUNT_SERVICE_URL: http://account-service:8081
     depends_on:
       - kafka
+      - mailpit
+      - account-service
     restart: unless-stopped
     networks:
       - banking-network
