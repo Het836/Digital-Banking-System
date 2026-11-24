@@ -22,6 +22,7 @@
 - [Configuration](#configuration)
 - [API reference](#api-reference)
 - [Data & messaging](#data--messaging)
+- [Frontend](#frontend)
 - [Health & tests](#health--tests)
 - [Troubleshooting & limitations](#troubleshooting--limitations)
 - [Future improvements](#future-improvements)
@@ -44,7 +45,7 @@
 | **Accounts** | Create and query accounts, view balances, and block accounts |
 | **Transfers** | Initiate transfers, view history, and verify with OTP |
 | **Fraud checks** | Check transaction velocity, unusual amounts, and balance thresholds |
-| **Payments** | Create Razorpay payment orders |
+| **Payments** | Create Razorpay payment orders and verify Checkout signatures |
 | **Events** | Coordinate workflows over Kafka; log notifications |
 | **Gateway** | Route APIs and apply Redis-backed IP rate limits |
 
@@ -93,7 +94,7 @@ The flow is asynchronous after transfer initiation and uses compensating actions
 | `fraud-detection-service/` | Kafka-driven transaction checks | 8084 |
 | `notification-service/` | Kafka consumers that log notifications | 8085 |
 | `docker-compose.yml` | Local infrastructure and all six application services | — |
-| `frontend/` | Local frontend work; currently excluded from GitHub by `.gitignore` | 3000 |
+| `frontend/` | React/Vite dashboard for local development and service demonstration | 3000 |
 
 Each service is an independent Maven project with `src/main/java`, `src/main/resources`, and `src/test/java`. Packages contain the service's controllers, services, repositories, entities, DTOs, clients, events, or configuration as needed.
 
@@ -116,6 +117,8 @@ Each service is an independent Maven project with `src/main/java`, `src/main/res
 - Docker Engine and Docker Compose
 
 From the repository root, build the six microservice images locally and start the full backend:
+
+For Razorpay test checkout, copy `.env.example` to `.env` if you do not already have a local `.env`, then set `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` there. Keep `.env` local; the secret key is used only by the Payment Service.
 
 ```bash
 docker compose up --build -d
@@ -141,21 +144,19 @@ docker compose down
 
 `docker compose down` preserves the MySQL data volume. To remove the data volume as well, use `docker compose down -v`.
 
-> **Fresh-clone configuration note:** Service `application.yaml` files are currently excluded by `.gitignore` and may exist only in the local working copy. They are required in each service's `src/main/resources` directory when building its image. A fresh clone needs these local configuration files before `docker compose up --build -d` can start the services. Do not commit credentials; use environment variables or sanitized configuration values.
-
-The `frontend/` directory is local-only and is not included in this repository at this time. To run it locally, use `npm install` and `npm run dev` from that directory; it is configured to connect to the gateway at `http://localhost:8080`.
+To run the frontend, use `npm install` and `npm run dev` from `frontend/`, then open `http://localhost:3000`. The UI proxies API requests to the local gateway and includes account, transfer, activity, and Razorpay test-checkout flows. It is a demo interface, not an authentication system. Use fictional data only.
 
 ## Configuration
 
-Spring Boot properties can be overridden with environment variables or command-line options. Docker Compose reads a root `.env` file when present; keep it local and never commit credentials.
+Spring Boot properties can be overridden with environment variables or command-line options. The service configurations use local Compose hostnames and development defaults. Docker Compose reads a root `.env` file when present; keep it local and never commit credentials.
 
 | Configuration | Defaults / notes |
 |---|---|
 | Ports | Gateway `8080`; services `8081`–`8085` as listed above |
 | MySQL | Local host port `3307`; separate databases `dbs_account_db`, `dbs_transaction_db`, `dbs_payment_db` |
-| Redis | `localhost:6379`; Gateway supports `REDIS_HOST` |
-| Account service URL | `ACCOUNT_SERVICE_URL`, default `http://localhost:8081` |
-| Gateway backend URLs | `TRANSACTION_SERVICE_URL` defaults to `http://localhost:8082`; `PAYMENT_SERVICE_URL` defaults to `http://localhost:8083` |
+| Redis | Containers use `redis:6379`; host tools can use `localhost:6379` |
+| Account service URL | `ACCOUNT_SERVICE_URL`, default `http://account-service:8081` inside Compose |
+| Gateway backend URLs | `TRANSACTION_SERVICE_URL` defaults to `http://transaction-service:8082`; `PAYMENT_SERVICE_URL` defaults to `http://payment-service:8083` inside Compose |
 | Fraud thresholds | `fraud.max-transactions-per-minute: 5`; `fraud.suspicious-amount-multiplier: 5`; `fraud.max-balance-percentage: 0.90` |
 | Razorpay | Set `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` for payment requests; keep credentials in local environment configuration |
 
@@ -175,9 +176,10 @@ The Gateway routes the API paths below. Use `http://localhost:8080` as the base 
 | `PUT` | `/api/v1/accounts/{accountNumber}/credit?amount={amount}` | Credit balance; used by transaction workflow. |
 | `POST` | `/api/v1/transactions/transfer` | Start transfer. JSON: `senderAccountNumber`, `receiverAccountNumber`, positive `amount`, optional `description`. |
 | `GET` | `/api/v1/transactions/{transactionId}` | Get transaction and current status. |
-| `GET` | `/api/v1/transactions/account/{accountNumber}` | List transactions sent from this account, newest first. |
+| `GET` | `/api/v1/transactions/account/{accountNumber}` | List transfers where this account is either sender or receiver, newest first. |
 | `POST` | `/api/v1/transactions/{transactionId}/verify?otp={otp}` | Verify a pending transaction with its six-digit OTP. |
 | `POST` | `/api/v1/payments/create-order` | Create a Razorpay order. JSON: `accountNumber`, positive `amount`, optional `description`. |
+| `POST` | `/api/v1/payments/verify` | Verify a Razorpay checkout signature. JSON: `razorpayOrderId`, `razorpayPaymentId`, `razorpaySignature`. |
 
 ### Example: create an account
 
@@ -217,6 +219,22 @@ Kafka topics used by service code: `transaction.initiated`, `fraud.check.clean`,
 
 Redis holds Gateway rate-limit state, fraud velocity and average-amount values, and OTPs with a five-minute expiry. No dead-letter queue or schema registry is configured.
 
+## Frontend
+
+The React/Vite dashboard lives in `frontend/` and proxies API requests to the local Gateway. It includes account lookup/creation, balances, transfers and OTP status, an activity list with sent and received transfers, service health, and Razorpay test Checkout with server-side signature verification. The Overview activity chart supports `24H`, `7D`, `30D`, and `All time`; **View all** expands up to 30 transactions inline.
+
+Start the backend from the repository root, then run the frontend in a second terminal:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. For Razorpay Checkout, set a matching Test Mode key ID and secret in the repository-root `.env` before starting/restarting the Payment Service. The secret stays in the backend; never put it in frontend configuration. See [`frontend/README.md`](frontend/README.md) for UI-specific notes.
+
+The frontend is a local demonstration interface, not an authentication system. Use fictional data only.
+
 ## Health & tests
 
 Actuator health and info endpoints are configured across services; the Gateway additionally exposes gateway actuator data:
@@ -244,7 +262,8 @@ On Windows use `.\mvnw.cmd test`. The modules include Spring application context
 |---|---|
 | MySQL, Kafka, or Redis connection refused | Run `docker compose ps`; inspect container logs and ports `3307`, `9092`, `6379`. |
 | Database authentication/connection error | Compare the service JDBC configuration with the local MySQL setup. The Compose MySQL volume persists across restarts. |
-| Gateway returns `503` | Verify target services and Redis. Gateway rate limits are 10 requests/second (burst 20) for account/transaction routes and 5/second (burst 10) for payment routes, by remote IP. |
+| Gateway returns `503` | Verify target services and Redis. |
+| Gateway returns `429` | The Gateway applies IP-based Redis rate limits. Local Compose overrides are 100 requests/second (burst 200) for account/transaction routes and 50/second (burst 100) for payments; application defaults remain lower. |
 | Transfer stays `PROCESSING` | Check Kafka consumer logs and query the transaction again. Suspicious transactions require OTP verification. |
 | Payment provider calls fail | Supply valid Razorpay test credentials through local environment variables. |
 
@@ -253,8 +272,8 @@ On Windows use `.\mvnw.cmd test`. The modules include Spring application context
 - Local Compose is a development setup: single-node Kafka and MySQL root access; it is not production-hardened.
 - The Gateway has no authentication configured. Do not expose account/balance operations to untrusted users.
 - Notification consumers write message content to application logs. Email delivery is not implemented despite mail dependencies.
-- Payment webhook handler has no HTTP route annotation, and the configured webhook secret is not validated.
-- Payment creation requests `USD` but converts the amount to minor units by multiplying by 100. Verify currency/amount handling before real use.
+- Payment checkout is confirmed through the `/verify` endpoint and server-side signature verification. A webhook handler exists in the code but is not mapped to an HTTP route; webhook signature validation is not implemented.
+- Payment orders use INR and convert rupees to paise; use Razorpay test credentials for local checkout.
 - Daily transaction limits are stored but are not enforced by transfer logic.
 - OTPs are included in application notification logs. Do not use real financial or personal data in development.
 

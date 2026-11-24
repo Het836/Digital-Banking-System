@@ -2,17 +2,21 @@ package com.banking.paymentservice.service;
 
 import com.banking.paymentservice.dto.CreatePaymentRequest;
 import com.banking.paymentservice.dto.PaymentOrderResponse;
+import com.banking.paymentservice.dto.VerifyPaymentRequest;
 import com.banking.paymentservice.entity.Payment;
 import com.banking.paymentservice.entity.PaymentStatus;
 import com.banking.paymentservice.repository.PaymentRepository;
 import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
+import com.razorpay.Utils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -54,15 +58,15 @@ public class PaymentService {
 
         RazorpayClient razorpayClient = new RazorpayClient(keyId, keySecret);
 
-        // Amount in paisa (1 INR = 100 paisa)
+        // Razorpay accepts payment amounts in the smallest currency unit.
         int amountPaise = request.getAmount()
                 .multiply(BigDecimal.valueOf(100))
-                .intValue();
+                .intValueExact();
 
 
         JSONObject orderRequest = new JSONObject();
         orderRequest.put("amount", amountPaise);
-        orderRequest.put("currency", "USD");
+        orderRequest.put("currency", "INR");
         orderRequest.put("receipt", "recp_"+ System.currentTimeMillis() + UUID.randomUUID().toString()
                 .replace("-", "").substring(0,10));
 
@@ -71,10 +75,10 @@ public class PaymentService {
 
         // Save payment records
         Payment payment = Payment.builder()
-                .razorpayPaymentId(razorpayOrder.get("id").toString())
+                .razorpayOrderId(razorpayOrder.get("id").toString())
                 .accountNumber(request.getAccountNumber())
                 .amount(request.getAmount())
-                .currency("USD")
+                .currency("INR")
                 .status(PaymentStatus.CREATED)
                 .description(request.getDescription())
                 .build();
@@ -85,11 +89,56 @@ public class PaymentService {
                 .paymentId(saved.getId())
                 .razorpayOrderId(razorpayOrder.get("id").toString())
                 .amount(request.getAmount())
-                .currency("USD")
+                .currency("INR")
                 .razorpayKeyId(keyId)
                 .status("CREATED")
                 .build();
 
+    }
+
+    public PaymentOrderResponse verifyPayment(VerifyPaymentRequest request) throws Exception {
+        JSONObject attributes = new JSONObject();
+        attributes.put("razorpay_order_id", request.getRazorpayOrderId());
+        attributes.put("razorpay_payment_id", request.getRazorpayPaymentId());
+        attributes.put("razorpay_signature", request.getRazorpaySignature());
+
+        if (!Utils.verifyPaymentSignature(attributes, keySecret)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid Razorpay payment signature");
+        }
+
+        Payment payment = paymentRepository.findByRazorpayOrderId(request.getRazorpayOrderId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment order not found"));
+
+        if (payment.getStatus() == PaymentStatus.COMPLETED) {
+            if (!request.getRazorpayPaymentId().equals(payment.getRazorpayPaymentId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Payment order was already completed");
+            }
+            return toPaymentOrderResponse(payment);
+        }
+
+        payment.setRazorpayPaymentId(request.getRazorpayPaymentId());
+        payment.setStatus(PaymentStatus.COMPLETED);
+        Payment completed = paymentRepository.save(payment);
+
+        Map<String, Object> event = new HashMap<>();
+        event.put("paymentId", completed.getId());
+        event.put("accountNumber", completed.getAccountNumber());
+        event.put("amount", completed.getAmount());
+        event.put("razorpayPaymentId", completed.getRazorpayPaymentId());
+        kafkaTemplate.send(PAYMENT_COMPLETED_TOPIC, completed.getId(), event);
+
+        return toPaymentOrderResponse(completed);
+    }
+
+    private PaymentOrderResponse toPaymentOrderResponse(Payment payment) {
+        return PaymentOrderResponse.builder()
+                .paymentId(payment.getId())
+                .razorpayOrderId(payment.getRazorpayOrderId())
+                .amount(payment.getAmount())
+                .currency(payment.getCurrency())
+                .razorpayKeyId(keyId)
+                .status(payment.getStatus().name())
+                .build();
     }
 
     public void handleWebhook(Map<String, Object> payload){

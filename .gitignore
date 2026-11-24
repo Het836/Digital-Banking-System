@@ -5,15 +5,15 @@
 # Generated service documentation
 **/HELP.md
 
-# Local service configuration
-**/src/main/resources/application.yml
-**/src/main/resources
-/application.yaml
-
-# Local-only frontend; not published with the backend repository yet
-/frontend/
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
 
 # Local environment variables and credentials
 rzp-key.csv
 .env
+.env.*
+!.env.example
+frontend/.env*
+!frontend/.env.example
 aws-key.csv

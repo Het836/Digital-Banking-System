@@ -95,7 +95,10 @@ public class TransactionService {
 
     public List<TransactionResponse> getTransactionHistory(String accountNumber){
         return transactionRepository
-                .findBySenderAccountNumberOrderByCreatedAtDesc(accountNumber)
+                .findBySenderAccountNumberOrReceiverAccountNumberOrderByCreatedAtDesc(
+                        accountNumber,
+                        accountNumber
+                )
                 .stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());

@@ -110,6 +110,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
     depends_on:
       - mysql
       - kafka
@@ -163,6 +164,12 @@ services:
       - "8080:8080"
     environment:
       SPRING_DATA_REDIS_HOST: redis
+      GATEWAY_ACCOUNT_RATE_LIMIT: 100
+      GATEWAY_ACCOUNT_BURST_CAPACITY: 200
+      GATEWAY_TRANSACTION_RATE_LIMIT: 100
+      GATEWAY_TRANSACTION_BURST_CAPACITY: 200
+      GATEWAY_PAYMENT_RATE_LIMIT: 50
+      GATEWAY_PAYMENT_BURST_CAPACITY: 100
     depends_on:
       - account-service
       - transaction-service
